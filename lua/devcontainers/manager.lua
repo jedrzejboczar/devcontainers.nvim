@@ -25,19 +25,28 @@ local cache = require('devcontainers.cache')
 ---@type table<string, thread[]> threads to notify after ensure_up completed
 local pending_ups = {}
 
+--- Both layouts the devcontainer CLI looks for in a workspace folder, in the order it does:
+--- `.devcontainer/devcontainer.json` first, then `.devcontainer.json` next to it.
+---@type string[]
+local CONFIG_NAMES = { '.devcontainer', '.devcontainer.json' }
+
 ---@param dir string
 ---@return boolean
 function M.is_workspace_dir(dir)
-    return vim.uv.fs_stat(vim.fs.joinpath(dir, '.devcontainer')) ~= nil
+    for _, name in ipairs(CONFIG_NAMES) do
+        if vim.uv.fs_stat(vim.fs.joinpath(dir, name)) then
+            return true
+        end
+    end
+    return false
 end
 
 ---@param dir? string defaults to local cwd
----@return string? workspace directory containsing .devcontainers/ directory
+---@return string? workspace directory containing the devcontainer configuration
 function M.find_workspace_dir(dir)
-    local found = vim.fs.find('.devcontainer', {
+    local found = vim.fs.find(CONFIG_NAMES, {
         upward = true,
-        type = 'directory',
-        path = vim.fn.getcwd(0),
+        path = dir or vim.fn.getcwd(0),
     })
     if #found ~= 0 then
         return vim.fs.dirname(found[1])

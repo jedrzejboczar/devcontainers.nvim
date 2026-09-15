@@ -7,7 +7,7 @@ Neovim plugin that allows to seamlessly run LSP servers in [devcontainers](https
 - [x] Run LSP server in devcontainer while Neovim is running on host system
 - [x] Translate paths within LSP `root_dir` between container paths and host system paths
 - [x] Translate paths outside of `root_dir` allowing for seamless `textDocument/definition` to system files inside container
-- [x] Automatically start devcontainer if `.devcontainer/` exists in `root_dir`
+- [x] Automatically start devcontainer if `.devcontainer/` or `.devcontainer.json` exists in `root_dir`
 - [x] Delay LSP server start until devcontainer is ready
 - [x] Compatible with new `vim.lsp.config` API
 - [x] Compatible with the legacy [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) `on_new_config` API

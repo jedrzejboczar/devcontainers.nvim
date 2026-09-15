@@ -33,6 +33,7 @@ end, { desc = 'devcontainers.nvim: start devcontainer' })
 vim.api.nvim_create_user_command('DevcontainersExec', function(args)
     local cli = require('devcontainers.cli')
     local manager = require('devcontainers.manager')
+    local log = require('devcontainers.log')()
 
     local workspace_dir = manager.find_workspace_dir()
     if not workspace_dir then
