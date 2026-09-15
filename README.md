@@ -10,6 +10,7 @@ Neovim plugin that allows to seamlessly run LSP servers in [devcontainers](https
 - [x] Automatically start devcontainer if `.devcontainer/` exists in `root_dir`
 - [x] Delay LSP server start until devcontainer is ready
 - [x] Compatible with new `vim.lsp.config` API
+- [x] Automatic mode: run every language server of a devcontainer project in the container, without wrapping each `cmd`
 - [x] Compatible with the legacy [nvim-lspconfig](https://github.com/neovim/nvim-lspconfig) `on_new_config` API
 
 ## 📝 Design
@@ -108,6 +109,45 @@ This can be combined with ['exrc'](https://neovim.io/doc/user/options.html#'exrc
 local dir = '/some/dir' -- or by parsing `debug.getinfo(1, 'S').source`
 require('devcontainers.local_cmd').set(dir, 'clangd', { 'clangd', '--query-driver=/usr/bin/arm-none-eabi-*' })
 ```
+
+### Automatic mode
+
+Wrapping every server by hand gets tedious, and it is not always possible: servers configured by other
+plugins (e.g. mason-lspconfig rewriting `cmd` to a mason path) are out of reach, and so is anything you did
+not think of in advance. Automatic mode wraps them all:
+
+```lua
+require('devcontainers').setup { lsp_auto = true }
+```
+
+A server is only taken into the container when the `root_dir` it resolved to has `.devcontainer/`, so projects
+without a devcontainer keep starting servers on the host exactly as before.
+
+A container built for one language rarely carries the servers for the others, so before handing a server over
+the container is asked whether it has it (`<server> --help`), and servers it does not have stay on the host.
+Set `lsp_auto_probe = false` to skip that round-trip when every server you use is in the image.
+
+Use a function to decide per server:
+
+```lua
+require('devcontainers').setup {
+    lsp_auto = function(name, config)
+        return name ~= 'ltex_plus' -- this one has nothing to do with the project
+    end,
+}
+```
+
+The server is looked up in the container by name, so a `cmd` pointing at a host path (as installed by e.g.
+mason) still finds the one inside the container.
+
+Automatic mode wraps `cmd` where `vim.lsp` resolves a client configuration. That is early enough to see
+`cmd` set by `lsp/*.lua` files and by other plugins, and, more importantly, it is before Neovim refuses to
+start a server whose `cmd` is not executable on the host -- which is the normal case here, as the server only
+needs to exist inside the container. Configurations whose `cmd` is already a function are left alone, so this
+combines with wrapping single servers by hand.
+
+One behaviour changes: a server that is installed neither in the container nor on the host used to be skipped
+silently, and now reports that it could not be started.
 
 ### nvim-lspconfig + on_new_config
 
