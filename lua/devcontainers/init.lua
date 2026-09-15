@@ -3,7 +3,15 @@ local M = {}
 ---@param opts? devcontainers.Config
 function M.setup(opts)
     opts = opts or {}
-    require('devcontainers.config').setup(opts)
+    local config = require('devcontainers.config')
+    config.setup(opts)
+
+    local auto = require('devcontainers.lsp.auto')
+    if config.lsp_auto then
+        auto.enable()
+    else
+        auto.disable()
+    end
 end
 
 --- Handler for lspconfig on_new_config callback to start LSP client in devcontainer.
@@ -79,8 +87,26 @@ local function validate_cmd(cmd)
     return true
 end
 
+--- How long the container is given to answer the `--help` probe.
+local PROBE_TIMEOUT_MS = 3000
+
+--- Whether the container can run this server at all. A container built for one language rarely
+--- carries the servers for the others, and without this check those would fail instead of staying
+--- on the host.
+---@async
+---@param root_dir string
+---@param cmd string[]
+---@return boolean
+local function can_run_in_container(root_dir, cmd)
+    local cli = require('devcontainers.cli')
+    local test_cmd = vim.list_slice(cmd)
+    table.insert(test_cmd, '--help')
+    return (pcall(cli.exec, root_dir, test_cmd, { timeout = PROBE_TIMEOUT_MS }))
+end
+
 ---@class devcontainers.make_cmd.opts
 ---@field no_local_fallback? boolean Run server without container as a fallback
+---@field probe? boolean Check that the container has the server, keep it on the host if it does not
 ---@field before_start? fun(config: vim.lsp.ClientConfig) callback invoked (in coroutine) after devcontainer up but before server start, can error() to stop
 
 ---@param get_cmd fun(config: vim.lsp.ClientConfig): string[]
@@ -93,8 +119,6 @@ local function make_lsp_cmd(get_cmd, opts)
     ---@param config vim.lsp.ClientConfig
     ---@return vim.lsp.rpc.PublicClient
     return function(dispatchers, config)
-        vim.validate('config.root_dir', config.root_dir, 'string', 'At this point config.root_dir should have already been resolved')
-
         local cmd = get_cmd(config)
         vim.validate('cmd', cmd, validate_cmd)
 
@@ -123,11 +147,22 @@ local function make_lsp_cmd(get_cmd, opts)
             return rpc.cmd_to_rpc(config, cmd)(dispatchers)
         end
 
+        if type(config.root_dir) ~= 'string' then
+            -- A server started for a file that belongs to no project; there is no devcontainer to
+            -- look for and nothing to translate paths against.
+            return make_local_fallback_cmd('no root_dir')
+        end
         if not manager.is_workspace_dir(config.root_dir) then
             return make_local_fallback_cmd('not a workspace dir')
         end
 
-        local final_cmd = cli.cmd(config.root_dir, 'exec', unpack(cmd))
+        -- Inside the container the server is whatever the container has in PATH. The host path
+        -- (e.g. the one mason installed) means nothing there, while the local fallback still wants
+        -- it in full.
+        local container_cmd = vim.list_slice(cmd --[[@as string[] ]])
+        container_cmd[1] = vim.fs.basename(container_cmd[1])
+
+        local final_cmd = cli.cmd(config.root_dir, 'exec', unpack(container_cmd))
         config._devcontainers.original_cmd = cmd
         config._devcontainers.cmd = final_cmd
 
@@ -139,6 +174,10 @@ local function make_lsp_cmd(get_cmd, opts)
             local success = manager.ensure_up(config.root_dir)
             if not success then
                 log.exception('Could not start devcontainer for %s in %s', config.name, config.root_dir)
+            end
+
+            if opts.probe and not can_run_in_container(config.root_dir, container_cmd) then
+                return make_local_fallback_cmd('server not available in the container')
             end
 
             if opts.before_start then
@@ -192,7 +231,7 @@ function M.lsp_cmd(cmd, opts)
         -- TODO: is there any way to just use the built-in 'exrc`? Using .nvim/lsp/*.lua doesn't seem to work
         -- Try to resolve local command registered for this directory
         local local_cmd = require('devcontainers.local_cmd')
-        local used_cmd = local_cmd.get(config.root_dir, config.name) or cmd
+        local used_cmd = config.root_dir and local_cmd.get(config.root_dir, config.name) or cmd
 
         -- If it is a function that call it
         if vim.is_callable(used_cmd) then

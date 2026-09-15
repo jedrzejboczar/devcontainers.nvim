@@ -13,6 +13,16 @@ local default = {
     --- Filter automiatically-added LSP protocol extensions
     ---@type devcontainers.lsp.ExtensionsFilter?
     lsp_extensions_filter = nil,
+    --- Run language servers in the devcontainer without wrapping each `cmd` in `lsp_cmd()`.
+    --- Applies to any server started in a directory that has `.devcontainer/`; pass a function to
+    --- decide per server. See `devcontainers.lsp.auto`.
+    ---@type boolean|fun(name: string, config: vim.lsp.Config): boolean
+    lsp_auto = false,
+    --- In automatic mode, ask the container whether it has the server before handing it over,
+    --- and keep the server on the host when it does not. Without this a devcontainer that carries
+    --- only some of your language servers breaks the rest of them.
+    ---@type boolean
+    lsp_auto_probe = true,
 }
 
 ---@type devcontainers.Config
